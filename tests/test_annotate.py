@@ -67,8 +67,8 @@ class Fixture:
 class Live:
     """A real server on an ephemeral port in a thread; shut down cleanly on exit."""
 
-    def __init__(self, store):
-        self.server = annotate.make_server(store, 0)
+    def __init__(self, store, token=None):
+        self.server = annotate.make_server(store, 0, token)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -88,6 +88,15 @@ class Live:
         raw = r.read()
         c.close()
         return r.status, raw
+
+    def raw(self, method, path, headers=None, body=None):
+        """Like req but with caller headers (e.g. a tunnel Host); returns the response headers too."""
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request(method, path, json.dumps(body) if body is not None else None, headers or {})
+        r = c.getresponse()
+        data = r.read()
+        c.close()
+        return r.status, data, {k.lower(): v for k, v in r.getheaders()}
 
 
 def J(raw):
@@ -363,6 +372,80 @@ class AnnotateTests(unittest.TestCase):
     def test_unknown_id_404(self):
         with Live(self.fx.store()) as srv:
             self.assertEqual(srv.req("GET", "/api/item/nope")[0], 404)
+
+
+class RemoteModeTests(unittest.TestCase):
+    """--remote: every request needs the secret; a tunnel's own Host header is accepted only with it."""
+    TOKEN = "test-token-abc"
+    TUNNEL = {"Host": "random-words.trycloudflare.com", "X-Forwarded-Proto": "https"}
+
+    def setUp(self):
+        self.fx = Fixture()
+        self.addCleanup(self.fx.tmp.cleanup)
+
+    def test_no_secret_is_refused_everywhere(self):
+        with Live(self.fx.store(), self.TOKEN) as srv:
+            for path in ("/", "/api/state", "/api/item/q_a", "/api/reveal/q_a"):
+                status, data, _ = srv.raw("GET", path, self.TUNNEL)
+                self.assertEqual(status, 403, path)
+                self.assertNotIn(b"GOLD-SECRET", data)
+                self.assertNotIn(b"<html", data)
+            status, _, _ = srv.raw("POST", "/api/lock", {**self.TUNNEL, "Content-Type": "application/json"},
+                                   {"question_id": "q_a", "answer": "x"})
+            self.assertEqual(status, 403)
+        self.assertFalse(any(e["event"] == "lock" for e in self.fx.jsonl("t")))
+
+    def test_wrong_secret_is_refused(self):
+        with Live(self.fx.store(), self.TOKEN) as srv:
+            status, _, headers = srv.raw("GET", "/?t=not-the-token", self.TUNNEL)
+            self.assertEqual(status, 403)
+            self.assertNotIn("set-cookie", headers)
+            status, _, _ = srv.raw("GET", "/api/state", {**self.TUNNEL, "Cookie": "lme_auth=nope"})
+            self.assertEqual(status, 403)
+
+    def test_secret_in_link_sets_cookie_and_redirects(self):
+        with Live(self.fx.store(), self.TOKEN) as srv:
+            status, _, headers = srv.raw("GET", f"/?t={self.TOKEN}", self.TUNNEL)
+            self.assertEqual(status, 302)
+            self.assertEqual(headers["location"], "/")
+            cookie = headers["set-cookie"]
+            self.assertIn(f"lme_auth={self.TOKEN}", cookie)
+            for attr in ("HttpOnly", "SameSite=Strict", "Secure"):
+                self.assertIn(attr, cookie)
+            self.assertEqual(headers["referrer-policy"], "no-referrer")
+
+    def test_cookie_unlocks_page_and_gate_still_holds(self):
+        auth = {**self.TUNNEL, "Cookie": f"lme_auth={self.TOKEN}"}
+        with Live(self.fx.store(), self.TOKEN) as srv:
+            status, data, _ = srv.raw("GET", "/", auth)
+            self.assertEqual(status, 200)
+            self.assertIn(b"<html", data)
+            status, data, _ = srv.raw("GET", "/api/item/q_a", auth)
+            self.assertEqual(status, 200)
+            for bad in (b"GOLD-SECRET", b"has_answer", b"answer_session_ids", b"PRIOR-CLAIM"):
+                self.assertNotIn(bad, data)
+            status, _, _ = srv.raw("GET", "/api/reveal/q_a", auth)
+            self.assertEqual(status, 403)  # the lock-before-reveal gate is unchanged
+            status, _, _ = srv.raw("POST", "/api/lock", {**auth, "Content-Type": "application/json"},
+                                   {"question_id": "q_a", "answer": "x", "quote": "y"})
+            self.assertEqual(status, 200)
+            status, data, _ = srv.raw("GET", "/api/reveal/q_a", auth)
+            self.assertEqual(status, 200)
+            self.assertIn(b"GOLD-SECRET-0", data)
+
+    def test_cross_site_origin_refused_even_with_cookie(self):
+        auth = {**self.TUNNEL, "Cookie": f"lme_auth={self.TOKEN}", "Origin": "https://evil.example",
+                "Content-Type": "application/json"}
+        with Live(self.fx.store(), self.TOKEN) as srv:
+            status, _, _ = srv.raw("POST", "/api/lock", auth, {"question_id": "q_a", "answer": "x"})
+            self.assertEqual(status, 403)
+
+    def test_local_mode_is_unchanged(self):
+        with Live(self.fx.store()) as srv:
+            status, _, _ = srv.raw("GET", "/api/state", {"Host": "random-words.trycloudflare.com"})
+            self.assertEqual(status, 403)
+            status, _ = srv.req("GET", "/api/state")
+            self.assertEqual(status, 200)
 
 
 if __name__ == "__main__":

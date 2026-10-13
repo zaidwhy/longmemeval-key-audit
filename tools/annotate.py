@@ -5,6 +5,8 @@ Usage:
     python -I tools/annotate.py --pass first                  serve http://127.0.0.1:8791
     python -I tools/annotate.py --pass first --summary        counts only, never answers
     python -I tools/annotate.py --pass second --ids-file ids.json   override the queue (blind re-annotation)
+    python -I tools/annotate.py --pass first --remote         same, but every request needs a secret token; for
+                                                              reaching the page from a phone through a tunnel
 
 Storage is append-only JSON Lines at annotations/<pass>.jsonl. Only that pass's file is read, so a
 later pass never sees labels from another pass. Standard library only.
@@ -12,20 +14,24 @@ later pass never sees labels from another pass. Standard library only.
 import argparse
 import csv
 import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import sys
 import threading
 from collections import Counter
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote
 
 SCHEMA = 2  # 2 adds lock/label "view" counters and label "assistant_checked"; schema 1 events replay unchanged
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8791
 MAX_BODY = 1_000_000
+COOKIE = "lme_auth"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 CODES = {
@@ -298,6 +304,12 @@ PAGE = r"""<!doctype html>
 header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:8px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;max-width:1200px;margin:0 auto;padding:16px}
 @media (max-width:900px){main{grid-template-columns:1fr}}
+@media (max-width:900px){
+button,select,input[type=text],input[type=date],input[type=number]{min-height:44px}
+button.lnk{min-height:36px;min-width:64px}textarea{min-height:96px}
+input[type=radio],input[type=checkbox]{width:22px;height:22px;margin-right:8px;vertical-align:middle}
+.codes label{padding:8px 0}.cmp{grid-template-columns:1fr}header{flex-wrap:wrap;gap:6px}
+}
 .col{min-width:0}.read{max-width:75ch}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin-bottom:14px}
 h2{font-size:1.05rem;margin:.2em 0 .5em}.mut{color:var(--mut);font-size:.9rem}
@@ -448,7 +460,7 @@ function dateHelp(){const a=parseD($("d1").value),b=parseD($("d2").value);
 """
 
 
-def make_handler(store, port_getter):
+def make_handler(store, port_getter, token=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -459,22 +471,54 @@ def make_handler(store, port_getter):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
             self.wfile.write(raw)
+
+        def _authenticated(self):
+            jar = SimpleCookie()
+            try:
+                jar.load(self.headers.get("Cookie", ""))
+            except Exception:
+                return False
+            morsel = jar.get(COOKIE)
+            return bool(morsel) and hmac.compare_digest(morsel.value.encode(), token.encode())
+
+        def _start_session(self):
+            # First visit with the secret in the URL: trade it for a cookie and redirect to a clean URL.
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "").lower() == "https" else ""
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000{secure}")
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
 
         def _guard(self):
             # Reject DNS-rebinding and cross-site requests: only our own origin may talk to us.
             host = self.headers.get("Host", "")
+            origin = self.headers.get("Origin")
+            if token is not None:
+                # Remote mode: the Host is whatever the tunnel presents, so the secret cookie is the gate.
+                if origin and origin not in (f"http://{host}", f"https://{host}"):
+                    raise ToolError(403, "bad Origin")
+                if not self._authenticated():
+                    raise ToolError(403, "forbidden: open the full link printed when the tool started")
+                return
             if host != f"{HOST}:{port_getter()}":
                 raise ToolError(403, "bad Host header")
-            origin = self.headers.get("Origin")
             if origin and origin != f"http://{host}":
                 raise ToolError(403, "bad Origin")
 
         def _route(self, method):
             try:
+                path, _, query = self.path.partition("?")
+                if token is not None and method == "GET" and path == "/":
+                    given = parse_qs(query).get("t", [""])[0]
+                    if given and hmac.compare_digest(given.encode(), token.encode()):
+                        return self._start_session()
                 self._guard()
-                path = self.path.split("?", 1)[0]
                 if method == "GET" and path == "/":
                     return self._send(200, PAGE.replace("__CODES__", json.dumps(CODES)).replace("__ASSIST__", json.dumps(ASSISTANT_TYPE)).encode("utf-8"),
                                       "text/html; charset=utf-8")
@@ -514,9 +558,9 @@ def make_handler(store, port_getter):
     return Handler
 
 
-def make_server(store, port):
+def make_server(store, port, token=None):
     box = {}
-    server = ThreadingHTTPServer((HOST, port), make_handler(store, lambda: box["port"]))
+    server = ThreadingHTTPServer((HOST, port), make_handler(store, lambda: box["port"], token))
     box["port"] = server.server_address[1]
     server.daemon_threads = True
     return server
@@ -528,6 +572,8 @@ def parse_args(argv):
     p.add_argument("--ids-file", help="JSON list of question ids; overrides the queue")
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--summary", action="store_true", help="print counts only and exit")
+    p.add_argument("--remote", action="store_true",
+                   help="require a secret token on every request (still binds 127.0.0.1; put a tunnel in front)")
     p.add_argument("--data", default=os.path.join(ROOT, "data", "longmemeval_oracle.json"))
     p.add_argument("--counts", default=os.path.join(ROOT, "counts.json"))
     p.add_argument("--prior", default=os.path.join(ROOT, "prior_reports.csv"))
@@ -547,8 +593,14 @@ def main(argv=None):
     if a.summary:
         print(json.dumps(store.summary(), indent=2))
         return
-    server = make_server(store, a.port)
-    print(f"http://{HOST}:{server.server_address[1]}  (pass {a.pass_name}, {len(store.queue)} items)")
+    token = secrets.token_urlsafe(24) if a.remote else None
+    server = make_server(store, a.port, token)
+    port = server.server_address[1]
+    print(f"http://{HOST}:{port}  (pass {a.pass_name}, {len(store.queue)} items)")
+    if token:
+        print(f"remote mode: every request needs the secret. Link for this run: http://{HOST}:{port}/?t={token}")
+        print(f"tunnel:      cloudflared tunnel --url http://{HOST}:{port}")
+        print("             then open https://<host printed by cloudflared>/?t=" + token + " on the phone")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

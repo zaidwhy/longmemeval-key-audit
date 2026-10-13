@@ -39,6 +39,15 @@ python -I tools/annotate.py --pass first --summary  # counts only, no answers
 
 The server will not send the gold answer, the evidence flags or any prior report for an item until your own answer to it is locked, and annotations are appended to `annotations/<pass>.jsonl`.
 
+### From a phone
+
+```
+python -u -I tools/annotate.py --pass first --remote
+cloudflared tunnel --url http://127.0.0.1:8791
+```
+
+`--remote` makes every request carry a secret. The tool prints a link ending in `?t=<secret>`; open `https://<host cloudflared prints>/?t=<secret>` on the phone once, and the browser keeps a cookie. The server still binds only 127.0.0.1, so nothing is reachable except through the tunnel. Anyone with the link can annotate, so do not share it; stopping the tool invalidates it. The laptop has to stay on and awake.
+
 ## Interest
 
 The auditor has no commercial memory product. He builds research memory systems and has a paper under review that reports a LoCoMo retrieval result.
