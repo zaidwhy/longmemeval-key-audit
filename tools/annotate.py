@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
-SCHEMA = 1
+SCHEMA = 2  # 2 adds lock/label "view" counters and label "assistant_checked"; schema 1 events replay unchanged
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8791
 MAX_BODY = 1_000_000
@@ -39,6 +39,23 @@ CODES = {
 }
 TIERS = ("definite", "ambiguous")
 NOT_ANSWERABLE_TEXT = "Not answerable from this evidence"
+ASSISTANT_TYPE = "single-session-assistant"  # the question type about what the assistant said; nothing is collapsed
+VIEW_KEYS = ("assistant_turns_total", "assistant_turns_opened", "searches")
+
+
+def parse_view(raw):
+    """Reading-record counters sent by the client. Absent -> zeros; anything that is not a non-negative int is a 400."""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ToolError(400, "view must be an object")
+    out = {}
+    for k in VIEW_KEYS:
+        v = raw.get(k, 0)
+        if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+            raise ToolError(400, f"view.{k} must be a non-negative integer")
+        out[k] = v
+    return out
 
 
 class ToolError(Exception):
@@ -189,14 +206,16 @@ class Store:
         sessions = [{"session_id": sid, "date": date,
                      "turns": [{"role": t["role"], "content": t["content"]} for t in turns]}
                     for sid, date, turns in zip(q["haystack_session_ids"], q["haystack_dates"], q["haystack_sessions"])]
+        words = {r: sum(len(t["content"].split()) for turns in q["haystack_sessions"] for t in turns if t["role"] == r)
+                 for r in ("user", "assistant")}
         out = {"question_id": qid, "question_type": q["question_type"], "question": q["question"],
-               "question_date": q["question_date"], "sessions": sessions, "status": self.status(qid)}
+               "question_date": q["question_date"], "sessions": sessions, "words": words, "status": self.status(qid)}
         if qid in self.locks:
             lk = self.locks[qid]
             out["lock"] = {k: lk[k] for k in ("answer", "quote", "not_answerable", "timestamp")}
         return out
 
-    def lock(self, qid, answer, quote, not_answerable):
+    def lock(self, qid, answer, quote, not_answerable, view=None):
         with self.lock_:
             self._need(qid)
             if qid in self.locks:
@@ -207,8 +226,9 @@ class Store:
             if not answer:
                 raise ToolError(400, "answer must not be empty")
             quote = quote.strip() if isinstance(quote, str) else ""
+            view = parse_view(view)
             e = self._append({"event": "lock", "question_id": qid, "answer": answer, "quote": quote,
-                              "not_answerable": bool(not_answerable)})
+                              "not_answerable": bool(not_answerable), "view": view})
             self._apply(e)
         return self.pre_lock(qid)
 
@@ -248,8 +268,13 @@ class Store:
                 raise ToolError(400, "justification is required")
             note = body.get("note")
             note = note.strip() if isinstance(note, str) else ""
+            view = parse_view(body.get("view"))
+            checked = body.get("assistant_checked") is True
+            if code != "OK" and not checked and self.items[qid]["question_type"] != ASSISTANT_TYPE:
+                raise ToolError(400, "assistant_checked is required for a non-OK code")
             e = self._append({"event": "label", "question_id": qid, "code": code, "evidence_label": flag,
-                              "tier": tier, "justification": just, "note": note})
+                              "tier": tier, "justification": just, "note": note, "assistant_checked": checked,
+                              "view": view})
             self._apply(e)
         return self.reveal(qid)
 
@@ -267,8 +292,8 @@ PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LongMemEval key audit</title>
 <style>
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--mut:#6b6a64;--card:#fff;--line:#dcd9d0;--user:#e8f0fb;--asst:#f1efe8;--hit:#fff1a8;--acc:#1f5fbf;--bad:#b3261e}
-@media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#e8e6df;--mut:#9a988f;--card:#1f1f1c;--line:#38372f;--user:#1c2a40;--asst:#272620;--hit:#5a4b00;--acc:#7aa7f0;--bad:#f2837c}}
+:root{--bg:#fbfaf7;--fg:#1d1d1b;--mut:#6b6a64;--card:#fff;--line:#dcd9d0;--user:#e8f0fb;--asst:#f1efe8;--hit:#fff1a8;--mk:#ffd54a;--acc:#1f5fbf;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--fg:#e8e6df;--mut:#9a988f;--card:#1f1f1c;--line:#38372f;--user:#1c2a40;--asst:#272620;--hit:#5a4b00;--mk:#8a6d00;--acc:#7aa7f0;--bad:#f2837c}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}
 header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:8px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;max-width:1200px;margin:0 auto;padding:16px}
@@ -280,6 +305,10 @@ h2{font-size:1.05rem;margin:.2em 0 .5em}.mut{color:var(--mut);font-size:.9rem}
 .turn{padding:8px 12px;border-radius:6px;margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere;border-left:4px solid transparent}
 .turn.user{background:var(--user);border-left-color:var(--acc)}.turn.assistant{background:var(--asst)}
 .turn.hit{outline:3px solid var(--hit);background:var(--hit);color:inherit}
+.bar{display:flex;gap:10px;align-items:center}.bar .role{flex:1}.turn.collapsed{padding-top:3px;padding-bottom:3px}
+button.lnk{padding:0 8px;font-size:.8rem;background:transparent;color:var(--acc);border-color:var(--line)}
+mark{background:var(--mk);color:inherit;border-radius:2px}mark.cur{outline:2px solid var(--acc)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.tools input[type=text]{flex:1;min-width:12rem;width:auto}
 .role{display:block;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
 input[type=text],textarea,select{width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 textarea{min-height:60px}label{display:block;margin:8px 0 2px;font-weight:600}label.inl{font-weight:400;display:flex;gap:6px;align-items:center}
@@ -287,7 +316,7 @@ button{font:inherit;padding:7px 14px;border-radius:6px;border:1px solid var(--ac
 button.sec{background:transparent;color:var(--acc)}button:disabled{opacity:.4;cursor:not-allowed}
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px}.err{color:var(--bad);min-height:1.2em}
 .codes label{font-weight:400;margin:4px 0}.codes small{color:var(--mut)}
-.hide{display:none}table{border-collapse:collapse;font-size:.85rem}td,th{padding:2px 8px;border-bottom:1px solid var(--line);text-align:left}
+.hide{display:none!important}table{border-collapse:collapse;font-size:.85rem}td,th{padding:2px 8px;border-bottom:1px solid var(--line);text-align:left}
 </style></head><body>
 <header><strong id="prog">...</strong><button class="sec" id="prev">Previous</button><button class="sec" id="next">Next</button>
 <span class="mut" id="where"></span></header>
@@ -302,8 +331,29 @@ button.sec{background:transparent;color:var(--acc)}button:disabled{opacity:.4;cu
 <div id="calc" class="mut"></div></div></div></main>
 <script>
 const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const CODES=__CODES__;
-let S=null,idx=0,cur=null,rev=null;
+const CODES=__CODES__,ASSIST=__ASSIST__;
+let S=null,idx=0,cur=null,rev=null,Q="",TR=[],found=new Set(),matches=[],mi=-1,pend=null,prevId=null;
+const VIEWS={};
+const vw=()=>VIEWS[cur.question_id]||(VIEWS[cur.question_id]={opened:new Set(),ever:new Set(),searches:new Set()});
+const effQ=()=>Q.trim()?Q:"";
+function commitSearch(){if(pend!==null){clearTimeout(pend);pend=null}if(effQ())vw().searches.add(Q)}
+function counters(){commitSearch();const v=vw();return {assistant_turns_total:cur.sessions.reduce((n,s)=>n+s.turns.filter(t=>t.role==="assistant").length,0),
+  assistant_turns_opened:v.ever.size,searches:v.searches.size}}
+const wc=t=>t.split(/\s+/).filter(Boolean).length;
+const lowr=x=>Array.from(x).map(c=>{const l=c.toLowerCase();return l.length===c.length?l:c}).join("");
+const isOpen=r=>!r.coll||vw().opened.has(r.tid)||found.has(r.tid);
+function sync(r){const o=isOpen(r);if(!r.coll)return;r.body.classList.toggle("hide",!o);r.btn.textContent=o?"hide":"show";r.node.classList.toggle("collapsed",!o)}
+function paint(r){r.body.replaceChildren();r.marks=[];const q=effQ();
+  if(!q){r.body.appendChild(document.createTextNode(r.content));return}
+  const h=lowr(r.content),n=lowr(q);let p=0,i;
+  while((i=h.indexOf(n,p))>=0){if(i>p)r.body.appendChild(document.createTextNode(r.content.slice(p,i)));
+    const m=document.createElement("mark");m.textContent=r.content.slice(i,i+n.length);r.body.appendChild(m);r.marks.push(m);p=i+n.length}
+  if(p<r.content.length)r.body.appendChild(document.createTextNode(r.content.slice(p)))}
+function go(i){if(mi>=0&&matches[mi])matches[mi].classList.remove("cur");mi=i;const m=matches[i];m.classList.add("cur");m.scrollIntoView({block:"center"})}
+function runSearch(){found=new Set();matches=[];mi=-1;
+  TR.forEach(r=>{paint(r);if(r.marks.length&&r.coll&&!vw().opened.has(r.tid))found.add(r.tid);matches.push(...r.marks)});
+  TR.forEach(sync);const sc=$("scount");if(sc)sc.textContent=effQ()?matches.length+" match"+(matches.length===1?"":"es"):"";
+  if(matches.length)go(0)}
 const $=id=>document.getElementById(id);
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 async function api(path,body){const r=await fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
@@ -320,19 +370,36 @@ async function refresh(){S=await api("/api/state");
 async function show(i){if(!S.queue.length){$("left").textContent="Queue is empty.";return}
   idx=Math.max(0,Math.min(i,S.queue.length-1));const q=S.queue[idx];
   cur=await api("/api/item/"+encodeURIComponent(q.question_id));rev=null;
+  if(cur.question_id!==prevId){commitSearch();Q="";prevId=cur.question_id}
   if(cur.status!=="new")rev=await api("/api/reveal/"+encodeURIComponent(q.question_id));
   $("where").textContent="item "+(idx+1)+" of "+S.total+" - "+q.question_id+" - "+q.stratum+" - "+cur.status;render()}
-function render(){const L=$("left");L.replaceChildren();
-  const hits=new Set((rev?rev.evidence_turns:[]).map(e=>e.session_id+"#"+e.turn));
+function render(){const L=$("left");L.replaceChildren();TR=[];found=new Set();
+  const hits=new Set((rev?rev.evidence_turns:[]).map(e=>e.session_id+"#"+e.turn)),exempt=cur.question_type===ASSIST;
   const c=el("div","card");c.appendChild(el("h2","","Question ("+cur.question_type+")"));
   c.appendChild(el("div","",cur.question));
   c.appendChild(el("div","mut","Question date: "+cur.question_date+(weekday(cur.question_date)?" - "+weekday(cur.question_date):"")));
+  c.appendChild(el("div","mut","user turns: "+cur.words.user+" words, assistant turns: "+cur.words.assistant+" words"));
   L.appendChild(c);
+  const tb=el("div","card tools"),si=el("input"),sc=el("span","mut");si.type="text";si.id="search";si.value=Q;si.placeholder="Search all turns (plain text, Enter = next match)";
+  si.setAttribute("aria-label","Search all turns");sc.id="scount";tb.append(si,sc);
+  if(!exempt){const ea=el("button","sec","Expand all assistant turns"),ca=el("button","sec","Collapse all");
+    ea.onclick=()=>{const v=vw();TR.forEach(r=>{if(r.coll){v.opened.add(r.tid);v.ever.add(r.tid)}});TR.forEach(sync)};
+    ca.onclick=()=>{vw().opened.clear();found=new Set();TR.forEach(sync)};tb.append(ea,ca)}
+  L.appendChild(tb);
   cur.sessions.forEach(s=>{const d=el("div","card sess");
     d.appendChild(el("h3","",s.date+(weekday(s.date)?" - "+weekday(s.date):"")+" - "+s.session_id));
-    s.turns.forEach((t,i)=>{const x=el("div","turn "+t.role+(hits.has(s.session_id+"#"+i)?" hit":""));
-      x.appendChild(el("span","role",t.role+(hits.has(s.session_id+"#"+i)?" - has_answer":"")));x.appendChild(document.createTextNode(t.content));d.appendChild(x)});
+    s.turns.forEach((t,i)=>{const tid=s.session_id+"#"+i,hit=hits.has(tid),coll=!exempt&&t.role==="assistant"&&!hit;
+      const x=el("div","turn "+t.role+(hit?" hit":"")),body=el("span","body"),r={tid,content:t.content,node:x,body,coll,marks:[]};
+      if(coll){const bar=el("div","bar");bar.appendChild(el("span","role",t.role+" - "+wc(t.content)+" words"));
+        r.btn=el("button","lnk","show");r.btn.onclick=()=>{const v=vw();
+          if(isOpen(r)){v.opened.delete(tid);found.delete(tid)}else{v.opened.add(tid);v.ever.add(tid)}sync(r)};
+        bar.appendChild(r.btn);x.appendChild(bar)}
+      else x.appendChild(el("span","role",t.role+(hit?" - has_answer":"")));
+      x.appendChild(body);d.appendChild(x);TR.push(r)});
     L.appendChild(d)});
+  si.oninput=()=>{Q=si.value;runSearch();if(pend!==null)clearTimeout(pend);pend=setTimeout(commitSearch,600)};
+  si.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();commitSearch();if(matches.length)go((mi+1)%matches.length)}};
+  runSearch();
   L.appendChild(cur.lock?reviewForm():lockForm())}
 function lockForm(){const f=el("div","card");f.appendChild(el("h2","","Your answer (gold is hidden until you lock)"));
   f.innerHTML+='<label for="ans">My answer</label><textarea id="ans"></textarea><label for="quo">Supporting quote</label><textarea id="quo"></textarea>'+
@@ -341,7 +408,7 @@ function lockForm(){const f=el("div","card");f.appendChild(el("h2","","Your answ
   setTimeout(()=>{const a=$("ans"),na=$("na");
     const upd=()=>b.disabled=!a.value.trim();
     a.oninput=upd;na.onchange=()=>{if(na.checked&&!a.value.trim())a.value="Not answerable from this evidence";upd()};
-    b.onclick=async()=>{b.disabled=true;try{await api("/api/lock",{question_id:cur.question_id,answer:a.value,quote:$("quo").value,not_answerable:na.checked});
+    b.onclick=async()=>{b.disabled=true;try{await api("/api/lock",{question_id:cur.question_id,answer:a.value,quote:$("quo").value,not_answerable:na.checked,view:counters()});
       S.queue[idx].status="locked";await show(idx);await refresh()}catch(x){e.textContent=x.message;upd()}}},0);return f}
 function reviewForm(){const w=el("div");const f=el("div","card");f.appendChild(el("h2","","Compare"));
   const g=el("div","cmp");const a=el("div"),b=el("div");
@@ -355,15 +422,18 @@ function reviewForm(){const w=el("div");const f=el("div","card");f.appendChild(e
   Object.entries(CODES).forEach(([c,m])=>{const l=el("label");l.innerHTML='<input type="radio" name="code" value="'+c+'"> <b>'+c+'</b> <small>'+m+'</small>';k.appendChild(l)});
   k.insertAdjacentHTML("beforeend",'<div id="tierbox"><label for="tier">Tier</label><select id="tier"><option value="">choose</option><option>definite</option><option>ambiguous</option></select></div>'+
    '<label class="inl" id="evbox"><input type="checkbox" id="ev"> evidence labels also wrong or incomplete</label>'+
+   '<label class="inl hide" id="acbox"><input type="checkbox" id="ac"> I searched or read the assistant turns for anything that changes this call</label>'+
    '<label for="just">Justification (one line)</label><input type="text" id="just"><label for="note">Note (optional)</label><textarea id="note"></textarea>');
   const sv=el("button","","Save and next"),er=el("div","err");k.append(sv,er);w.appendChild(k);
   setTimeout(()=>{const sync=()=>{const c=(document.querySelector("input[name=code]:checked")||{}).value;
-      $("tierbox").classList.toggle("hide",!c||c==="OK");$("evbox").classList.toggle("hide",!c||c==="OK"||c==="EVIDENCE_LABEL")};
+      $("tierbox").classList.toggle("hide",!c||c==="OK");$("evbox").classList.toggle("hide",!c||c==="OK"||c==="EVIDENCE_LABEL");
+      $("acbox").classList.toggle("hide",!c||c==="OK"||cur.question_type===ASSIST)};
     document.querySelectorAll("input[name=code]").forEach(r=>r.onchange=sync);
     if(L){document.querySelector("input[name=code][value="+L.code+"]").checked=true;$("tier").value=L.tier||"";$("ev").checked=L.evidence_label;$("just").value=L.justification;$("note").value=L.note}
     sync();
     sv.onclick=async()=>{const c=(document.querySelector("input[name=code]:checked")||{}).value;
-      try{await api("/api/label",{question_id:cur.question_id,code:c,tier:$("tier").value,evidence_label:$("ev").checked&&!$("evbox").classList.contains("hide"),justification:$("just").value,note:$("note").value});
+      try{await api("/api/label",{question_id:cur.question_id,code:c,tier:$("tier").value,evidence_label:$("ev").checked&&!$("evbox").classList.contains("hide"),justification:$("just").value,note:$("note").value,
+        assistant_checked:$("ac").checked&&!$("acbox").classList.contains("hide"),view:counters()});
         await refresh();await show(Math.min(idx+1,S.queue.length-1))}catch(x){er.textContent=x.message}}},0);return w}
 $("prev").onclick=()=>show(idx-1);$("next").onclick=()=>show(idx+1);
 function dateHelp(){const a=parseD($("d1").value),b=parseD($("d2").value);
@@ -406,7 +476,7 @@ def make_handler(store, port_getter):
                 self._guard()
                 path = self.path.split("?", 1)[0]
                 if method == "GET" and path == "/":
-                    return self._send(200, PAGE.replace("__CODES__", json.dumps(CODES)).encode("utf-8"),
+                    return self._send(200, PAGE.replace("__CODES__", json.dumps(CODES)).replace("__ASSIST__", json.dumps(ASSISTANT_TYPE)).encode("utf-8"),
                                       "text/html; charset=utf-8")
                 if method == "GET" and path == "/api/state":
                     return self._send(200, store.state())
@@ -426,7 +496,8 @@ def make_handler(store, port_getter):
                         raise ToolError(400, "body must be an object")
                     qid = body.get("question_id")
                     if path == "/api/lock":
-                        out = store.lock(qid, body.get("answer"), body.get("quote"), body.get("not_answerable"))
+                        out = store.lock(qid, body.get("answer"), body.get("quote"), body.get("not_answerable"),
+                                         body.get("view"))
                     else:
                         out = store.label(qid, body)
                     return self._send(200, out)

@@ -98,8 +98,23 @@ Added after reviewing the documented mistakes of earlier audits; the full mappin
 7. **Judge test.** Wrong candidate answers are produced by a documented, scripted rule, and the rule and all candidates are released.
 8. **Release notes** state the annotator count, hours, which agreement checks exist and which do not.
 
+## Amendment A2 (2026-10-13, before any annotation)
+
+Changes the reading procedure. When it was added, the annotation file held one session-start event and no locked answer, so no gold answer had been seen.
+
+**Reason.** Reading load was measured from the data (word counts only, no answers): the 141 first-release items hold about 650,000 words of evidence, of which about 75,000 are user turns. Reading every word is about 43 hours for the first release and about 141 hours for all 500, at 250 words a minute. That is not feasible for one annotator.
+
+**New procedure.**
+1. User turns are read in full for every question.
+2. Assistant turns are shown collapsed and are searchable. For questions of type `single-session-assistant`, which ask about what the assistant said, all turns are shown and read in full.
+3. Before any non-OK label, the assistant turns are searched or read for anything that changes the call. The tool requires this to be confirmed and records it.
+4. The tool records, per item, how many assistant turns were opened and how many searches were run, and these counts are released with the ledger.
+
+**Consequence, stated in every release.** An error that is visible only in an assistant turn can be missed on an item labelled OK. The reported error rate was already defined as a lower bound; A2 makes that bound looser, not invalid. Non-OK calls are not weakened, because rule 3 applies to all of them.
+
 ## Change log
 
 - 2026-10-13: draft written.
 - 2026-10-13: prior reports extended to 21 question IDs, sample re-drawn with the same seed, prediction entered, schedule added, frozen at tag `prereg-v1`.
 - 2026-10-13: Amendment A1 added (see above and `PITFALLS.md`), before any annotation. Annotation may begin before 19 Oct; the schedule dates are latest starts, not earliest.
+- 2026-10-13: Amendment A2 added (reading procedure: user turns in full, assistant turns collapsed and searchable), before any answer was locked.

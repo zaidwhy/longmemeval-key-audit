@@ -14,14 +14,16 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
 import annotate  # noqa: E402
 
-IDS = ["q_a", "q_b", "q_c", "q_d_abs", "q_e"]
+IDS = ["q_a", "q_b", "q_c", "q_d_abs", "q_e", "q_f_asst"]
+ASST = "q_f_asst"  # single-session-assistant: exempt from the assistant-check rule
 
 
 def make_item(qid, n):
     sessions = [[{"role": "user", "content": f"user text {qid} s{s}"},
                  {"role": "assistant", "content": f"assistant text {qid} s{s}", **({"has_answer": True} if s == 0 else {})}]
                 for s in range(2)]
-    return {"question_id": qid, "question_type": "multi-session" if n % 2 else "temporal-reasoning",
+    return {"question_id": qid, "question_type": "single-session-assistant" if qid == ASST else
+            "multi-session" if n % 2 else "temporal-reasoning",
             "question": f"What about {qid}?", "question_date": "2023/05/30 (Tue) 10:00",
             "answer": f"GOLD-SECRET-{n}" if n != 3 else 33, "answer_session_ids": [f"{qid}_s0"],
             "haystack_session_ids": [f"{qid}_s0", f"{qid}_s1"],
@@ -50,7 +52,7 @@ class Fixture:
         self.sample = os.path.join(d, "sample.json")
         with open(self.sample, "w") as f:
             json.dump({"prior_reported_stratum": ["q_a", "q_e"],
-                       "sample": {"temporal-reasoning": ["q_c", "q_b"], "abstention": ["q_d_abs"]}}, f)
+                       "sample": {"temporal-reasoning": ["q_c", "q_b"], "abstention": ["q_d_abs"], "assistant": ["q_f_asst"]}}, f)
         self.ann = os.path.join(d, "annotations")
 
     def store(self, pass_name="t", ids_file=None, log_session=True):
@@ -102,7 +104,7 @@ class AnnotateTests(unittest.TestCase):
         # order ("abstention" before "temporal-reasoning"), ids in the listed order within a stratum
         s = self.fx.store()
         self.assertEqual(s.queue, [("q_a", "prior-reported"), ("q_e", "prior-reported"), ("q_d_abs", "abstention"),
-                                   ("q_c", "temporal-reasoning"), ("q_b", "temporal-reasoning")])
+                                   ("q_f_asst", "assistant"), ("q_c", "temporal-reasoning"), ("q_b", "temporal-reasoning")])
 
     def test_ids_file_overrides_queue(self):
         p = os.path.join(self.fx.tmp.name, "ids.json")
@@ -118,7 +120,7 @@ class AnnotateTests(unittest.TestCase):
                 for bad in (b"GOLD-SECRET", b"has_answer", b"answer_session_ids", b"PRIOR-CLAIM", b"rep1"):
                     self.assertNotIn(bad, raw)
                 self.assertEqual(sorted(J(raw)), ["question", "question_date", "question_id", "question_type",
-                                                  "sessions", "status"])
+                                                  "sessions", "status", "words"])
             status, raw = srv.req("GET", "/api/state")
             self.assertEqual(status, 200)
             self.assertIn(b"q_e", raw)
@@ -176,7 +178,7 @@ class AnnotateTests(unittest.TestCase):
         s = self.fx.store()
         s.lock("q_a", "mine", "", False)
         with self.assertRaises(annotate.ToolError):
-            s.label("q_a", {"code": "WRONG_GOLD", "justification": "j"})
+            s.label("q_a", {"code": "WRONG_GOLD", "justification": "j", "assistant_checked": True})
         with self.assertRaises(annotate.ToolError):
             s.label("q_a", {"code": "NOPE", "justification": "j"})
         with self.assertRaises(annotate.ToolError):
@@ -184,14 +186,15 @@ class AnnotateTests(unittest.TestCase):
         self.assertNotIn("q_a", s.labels)
         s.label("q_a", {"code": "OK", "tier": "definite", "justification": "matches"})
         self.assertIsNone(s.labels["q_a"][-1]["tier"])
-        s.label("q_a", {"code": "WRONG_GOLD", "tier": "definite", "evidence_label": True, "justification": "j"})
+        s.label("q_a", {"code": "WRONG_GOLD", "tier": "definite", "evidence_label": True, "justification": "j",
+                        "assistant_checked": True})
         self.assertTrue(s.labels["q_a"][-1]["evidence_label"])
 
     def test_label_revision_appends_latest_wins(self):
         s = self.fx.store()
         s.lock("q_a", "mine", "", False)
         s.label("q_a", {"code": "OK", "justification": "first"})
-        r = s.label("q_a", {"code": "MULTIPLE", "tier": "ambiguous", "justification": "second"})
+        r = s.label("q_a", {"code": "MULTIPLE", "tier": "ambiguous", "justification": "second", "assistant_checked": True})
         self.assertEqual(r["label"]["code"], "MULTIPLE")
         self.assertEqual(r["label_revisions"], 1)
         self.assertEqual([e["event"] for e in self.fx.jsonl()], ["session", "lock", "label", "label"])
@@ -239,7 +242,8 @@ class AnnotateTests(unittest.TestCase):
     def test_summary_has_counts_only(self):
         s = self.fx.store()
         s.lock("q_a", "MY-ANSWER-TEXT", "MY-QUOTE-TEXT", False)
-        s.label("q_a", {"code": "WRONG_GOLD", "tier": "definite", "justification": "JUST-TEXT", "note": "NOTE-TEXT"})
+        s.label("q_a", {"code": "WRONG_GOLD", "tier": "definite", "justification": "JUST-TEXT", "note": "NOTE-TEXT",
+                         "assistant_checked": True})
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             annotate.main(["--pass", "t", "--summary", "--data", self.fx.data, "--counts", self.fx.counts,
@@ -252,6 +256,102 @@ class AnnotateTests(unittest.TestCase):
                          (1, 1, {"WRONG_GOLD": 1}, {"definite": 1}))
         self.assertEqual(summ["per_stratum"]["prior-reported"]["labelled"], 1)
         self.assertEqual(sum(e["event"] == "session" for e in self.fx.jsonl()), 1)  # --summary logs no session
+
+    def test_lock_stores_view_and_defaults_to_zero(self):
+        with Live(self.fx.store()) as srv:
+            v = {"assistant_turns_total": 4, "assistant_turns_opened": 1, "searches": 2}
+            self.assertEqual(srv.req("POST", "/api/lock", {"question_id": "q_a", "answer": "m", "view": v})[0], 200)
+            self.assertEqual(srv.req("POST", "/api/lock", {"question_id": "q_b", "answer": "m"})[0], 200)
+            self.assertEqual(srv.req("POST", "/api/lock", {"question_id": "q_c", "answer": "m", "view": {"searches": 3}})[0], 200)
+        locks = {e["question_id"]: e for e in self.fx.jsonl() if e["event"] == "lock"}
+        self.assertEqual(locks["q_a"]["view"], v)
+        self.assertEqual(locks["q_b"]["view"], {"assistant_turns_total": 0, "assistant_turns_opened": 0, "searches": 0})
+        self.assertEqual(locks["q_c"]["view"], {"assistant_turns_total": 0, "assistant_turns_opened": 0, "searches": 3})
+
+    def test_bad_view_rejected_not_coerced(self):
+        # Documented behaviour: a view that is not an object, or a counter that is not a non-negative int
+        # (negative, float, string, bool, null), is a 400 and nothing is written.
+        with Live(self.fx.store()) as srv:
+            for bad in ({"searches": -1}, {"searches": 1.5}, {"searches": "2"}, {"searches": True},
+                        {"assistant_turns_total": None}, [1, 2], "x"):
+                status, _ = srv.req("POST", "/api/lock", {"question_id": "q_a", "answer": "m", "view": bad})
+                self.assertEqual(status, 400, bad)
+            self.assertEqual(srv.req("POST", "/api/lock", {"question_id": "q_a", "answer": "m"})[0], 200)
+            status, _ = srv.req("POST", "/api/label", {"question_id": "q_a", "code": "OK", "justification": "j",
+                                                       "view": {"assistant_turns_opened": -3}})
+            self.assertEqual(status, 400)
+        self.assertEqual([e["event"] for e in self.fx.jsonl()], ["session", "lock"])
+
+    def test_non_ok_label_needs_assistant_checked(self):
+        with Live(self.fx.store()) as srv:
+            srv.req("POST", "/api/lock", {"question_id": "q_a", "answer": "m"})
+            base = {"question_id": "q_a", "code": "WRONG_GOLD", "tier": "definite", "justification": "j"}
+            self.assertEqual(srv.req("POST", "/api/label", base)[0], 400)
+            self.assertEqual(srv.req("POST", "/api/label", {**base, "assistant_checked": False})[0], 400)
+            self.assertEqual(srv.req("POST", "/api/label", {**base, "assistant_checked": "yes"})[0], 400)
+            self.assertNotIn("label", [e["event"] for e in self.fx.jsonl()])
+            v = {"assistant_turns_total": 2, "assistant_turns_opened": 2, "searches": 1}
+            self.assertEqual(srv.req("POST", "/api/label", {**base, "assistant_checked": True, "view": v})[0], 200)
+        label = self.fx.jsonl()[-1]
+        self.assertIs(label["assistant_checked"], True)
+        self.assertEqual(label["view"], v)
+
+    def test_ok_label_needs_no_flag(self):
+        with Live(self.fx.store()) as srv:
+            srv.req("POST", "/api/lock", {"question_id": "q_a", "answer": "m"})
+            srv.req("POST", "/api/lock", {"question_id": "q_b", "answer": "m"})
+            self.assertEqual(srv.req("POST", "/api/label", {"question_id": "q_a", "code": "OK", "justification": "j"})[0], 200)
+            self.assertEqual(srv.req("POST", "/api/label", {"question_id": "q_b", "code": "OK", "justification": "j",
+                                                            "assistant_checked": True})[0], 200)
+        labels = [e for e in self.fx.jsonl() if e["event"] == "label"]
+        self.assertEqual([e["assistant_checked"] for e in labels], [False, True])
+        self.assertEqual(labels[0]["view"], {"assistant_turns_total": 0, "assistant_turns_opened": 0, "searches": 0})
+
+    def test_single_session_assistant_is_exempt(self):
+        with Live(self.fx.store()) as srv:
+            srv.req("POST", "/api/lock", {"question_id": ASST, "answer": "m"})
+            status, _ = srv.req("POST", "/api/label", {"question_id": ASST, "code": "WRONG_GOLD", "tier": "definite",
+                                                       "justification": "j"})
+            self.assertEqual(status, 200)
+            self.assertEqual(J(srv.req("GET", f"/api/item/{ASST}")[1])["question_type"], "single-session-assistant")
+        self.assertIs(self.fx.jsonl()[-1]["assistant_checked"], False)
+
+    def test_word_counts_in_item(self):
+        with Live(self.fx.store()) as srv:
+            words = J(srv.req("GET", "/api/item/q_a")[1])["words"]
+        self.assertEqual(words, {"user": 8, "assistant": 8})  # 2 sessions x 4 words each
+
+    def test_old_schema_events_still_replay(self):
+        os.makedirs(self.fx.ann)
+        old = [{"event": "session", "pass": "t", "timestamp": "2026-10-14T09:00:00.000000Z", "schema": 1,
+                "data_sha256": "x", "queue_size": 6},
+               {"event": "lock", "pass": "t", "timestamp": "2026-10-14T09:01:00.000000Z", "schema": 1, "question_id": "q_a",
+                "answer": "old", "quote": "q", "not_answerable": False},
+               {"event": "label", "pass": "t", "timestamp": "2026-10-14T09:02:00.000000Z", "schema": 1, "question_id": "q_a",
+                "code": "WRONG_GOLD", "evidence_label": False, "tier": "definite", "justification": "j", "note": ""},
+               {"event": "lock", "pass": "t", "timestamp": "2026-10-14T09:03:00.000000Z", "schema": 1, "question_id": "q_e",
+                "answer": "old2", "quote": "", "not_answerable": False}]
+        with open(os.path.join(self.fx.ann, "t.jsonl"), "w", encoding="utf-8") as f:
+            f.write("".join(json.dumps(e) + "\n" for e in old))
+        s = self.fx.store()
+        st = s.state()
+        self.assertEqual((st["first_open"], st["labelled"], st["queue"][1]["status"]), (1, 1, "locked"))
+        self.assertEqual(s.reveal("q_a")["label"]["code"], "WRONG_GOLD")
+        self.assertEqual(s.summary()["per_code"], {"WRONG_GOLD": 1})
+        self.assertEqual(s.pre_lock("q_a")["lock"]["answer"], "old")
+        r = s.label("q_a", {"code": "OK", "justification": "later"})  # revision on top of a schema-1 label
+        self.assertEqual(r["label_revisions"], 1)
+        self.assertEqual(annotate.SCHEMA, 2)
+
+    def test_release_check_reads_new_events(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+        import release_check
+        s = self.fx.store()
+        s.lock("q_a", "m", "a quote", False, {"searches": 1})
+        s.label("q_a", {"code": "WRONG_GOLD", "tier": "definite", "justification": "j", "assistant_checked": True})
+        out = release_check.check(release_check.read_events(s.path))
+        self.assertEqual((out["locked"], out["labelled"], out["by_code"]), (1, 1, {"WRONG_GOLD": 1}))
+        self.assertEqual(out["definite_without_quote"], [])
 
     def test_bad_host_rejected(self):
         with Live(self.fx.store()) as srv:

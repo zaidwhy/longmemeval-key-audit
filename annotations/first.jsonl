@@ -1,0 +1,2 @@
+{"event": "session", "pass": "first", "timestamp": "2026-10-13T14:25:14.265636Z", "schema": 1, "data_sha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c", "queue_size": 141}
+{"event": "session", "pass": "first", "timestamp": "2026-10-13T14:39:37.924662Z", "schema": 2, "data_sha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c", "queue_size": 141}

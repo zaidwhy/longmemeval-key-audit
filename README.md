@@ -2,7 +2,7 @@
 
 A preregistered audit of the LongMemEval answer key: for each of the 500 questions, does the benchmark's own evidence support the gold answer and the evidence labels?
 
-**Status (2026-10-13):** protocol frozen at tag `prereg-v1`, amended once (A1) before any annotation. Annotation not started. There are no findings yet.
+**Status (2026-10-13):** protocol frozen at tag `prereg-v1`, amended twice (A1, A2) before any answer was locked. Annotation not started. There are no findings yet.
 
 ## What is here
 
