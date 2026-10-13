@@ -2,7 +2,7 @@
 
 A preregistered audit of the LongMemEval answer key: for each of the 500 questions, does the benchmark's own evidence support the gold answer and the evidence labels?
 
-**Status (2026-10-13):** protocol frozen, annotation not started. There are no findings yet.
+**Status (2026-10-13):** protocol frozen at tag `prereg-v1`, amended once (A1) before any annotation. Annotation not started. There are no findings yet.
 
 ## What is here
 
@@ -13,7 +13,9 @@ A preregistered audit of the LongMemEval answer key: for each of the 500 questio
 | `prior_reports.csv` | Every publicly reported error found so far, with its source. These are other people's reports, verified separately and never counted as findings of this audit |
 | `counts.json` | Structural counts of the audited file, with its revision hash and SHA-256 |
 | `sample_v01.json` | The seeded 120-question sample for the first release |
-| `scripts/` | `load_counts.py` and `sample.py`, which produce the two files above |
+| `PITFALLS.md` | Mistakes documented in earlier audits and the rule here that prevents each |
+| `scripts/` | `load_counts.py` and `sample.py`, which produce the two files above; `release_check.py`, which must pass before any release |
+| `tools/annotate.py` | The local annotation tool |
 
 ## Data
 
@@ -27,6 +29,15 @@ python -I scripts/sample.py data/longmemeval_oracle.json prior_reports.csv sampl
 ```
 
 Both commands rewrite the committed file with identical content.
+
+## Annotate
+
+```
+python -I tools/annotate.py --pass first            # serves http://127.0.0.1:8791
+python -I tools/annotate.py --pass first --summary  # counts only, no answers
+```
+
+The server will not send the gold answer, the evidence flags or any prior report for an item until your own answer to it is locked, and annotations are appended to `annotations/<pass>.jsonl`.
 
 ## Interest
 

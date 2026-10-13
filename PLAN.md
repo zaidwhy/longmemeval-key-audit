@@ -85,7 +85,21 @@ Zero paid calls. Annotation needs no model. Model calls are cached and resumable
 
 If v0.1 slips past 8 Nov it resumes on 16 Dec; it is not worked on during the exam period.
 
+## Amendment A1 (2026-10-13, before any annotation)
+
+Added after reviewing the documented mistakes of earlier audits; the full mapping is in `PITFALLS.md`. No gold answer in the sample had been read when this was added. A1 tightens the protocol and removes nothing.
+
+1. **Definite tier.** A non-OK call is definite only if it passes the definite checklist in `PITFALLS.md` (verbatim quote, no dependence on one of several reasonable readings, arithmetic written out, confirmed on a later calendar day, not explained by sessions outside the labelled evidence). Otherwise it is ambiguous.
+2. **Second look.** Every definite call is re-examined on a later calendar day before a release, recorded as a new label event.
+3. **Scope wording.** Claims are about the gold answer given the labelled evidence sessions at the pinned revision. Errors caused by filler sessions in the S and M files are not detected by this audit, and each release says so.
+4. **Prior reports.** For each prior-reported item the verification also records whether the problem is present at the pinned revision.
+5. **Reporting.** Raw counts with denominators and Wilson intervals; no category-averaged headline; a sample is called a sample and no benchmark-wide ceiling is stated before all 500 are done; no score for any system of the auditor's; no accuracy "on the remaining valid questions".
+6. **Numbers.** Every released number is produced by a script from `annotations/*.jsonl`.
+7. **Judge test.** Wrong candidate answers are produced by a documented, scripted rule, and the rule and all candidates are released.
+8. **Release notes** state the annotator count, hours, which agreement checks exist and which do not.
+
 ## Change log
 
 - 2026-10-13: draft written.
 - 2026-10-13: prior reports extended to 21 question IDs, sample re-drawn with the same seed, prediction entered, schedule added, frozen at tag `prereg-v1`.
+- 2026-10-13: Amendment A1 added (see above and `PITFALLS.md`), before any annotation. Annotation may begin before 19 Oct; the schedule dates are latest starts, not earliest.
