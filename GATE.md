@@ -9,7 +9,7 @@ Checked 2026-10-13. Re-run before every release.
 **Cautions recorded at the gate**
 - The owner replied to data-error reports up to 2025-12-22 and to none of the 2026 reports. The original repository was last pushed 2026-05-11; V2 was last pushed 2026-08-09. A maintainer response is possible, not expected.
 - Three reported errors the owner agreed to fix (370a8ff4, dd2973ad, 51a45a95) are still present per the open issues; 370a8ff4 has been reported four times.
-- Publicly reported so far: 13 distinct question IDs (one withdrawn by its reporter), one structural report on the S file, and an 8-row dossier in arXiv 2609.38021 whose question IDs are not yet extracted. See `prior_reports.csv`.
+- Publicly reported so far: 21 distinct question IDs. 13 come from the issue tracker (one withdrawn by its reporter), 7 more from the 8-row dossier released with arXiv 2609.38021 (its eighth row, 370a8ff4, is already among the 13; the dossier claims one strict defect and seven boundary cases), and 1 from a second-hand citation of the Chronos paper (arXiv 2603.16862, not read). There is also one structural report on the S file. See `prior_reports.csv`.
 - The closest prior work, arXiv 2609.38021, is by the author of a memory product and states that no third-party adjudicator checked its dossier.
 - The existing LoCoMo audit (dial481/locomo-audit) names its auditor as an LLM "with human review". An audit here that is read by a human first is a difference worth stating, and it means any model pass must be labelled as a model pass.
 

@@ -1,6 +1,6 @@
 # PLAN - LongMemEval answer-key audit (preregistration)
 
-STATUS: DRAFT, not frozen. Zaid reviews, edits and freezes this before any gold answer in the sample is read. Freezing = a public commit whose timestamp is earlier than the first annotation file.
+STATUS: FROZEN 2026-10-13 at git tag `prereg-v1`. No gold answer in the sample had been read when this was frozen. Any later change is a dated entry in the change log.
 
 ## Question
 
@@ -32,7 +32,7 @@ Every non-OK call is tiered **definite** or **ambiguous**. The headline rate cou
 ## Strata and first release (v0.1)
 
 - **Prior-reported stratum:** the question IDs in `prior_reports.csv`. Analysed as verification of other people's reports. Never counted as findings of this audit and never included in the sample rate.
-- **Sample:** 120 questions drawn by `scripts/sample.py`, seed 20261013, proportional across the six question types plus an abstention stratum, from the questions not in the prior-reported stratum. If the dossier IDs from arXiv 2609.38021 are added to `prior_reports.csv` before the freeze, the sample is re-drawn once with the same seed and this line is updated.
+- **Sample:** 120 questions drawn by `scripts/sample.py`, seed 20261013, proportional across the six question types plus an abstention stratum, from the questions not in the prior-reported stratum. The sample was re-drawn once before the freeze, with the same seed, after the eight dossier IDs from arXiv 2609.38021 and one second-hand report were added to `prior_reports.csv` (21 prior-reported IDs, pool of 479). The frozen list is `sample_v01.json`.
 - **Reported:** definite error rate with a 95% Wilson interval, per-type counts, and the full item ledger.
 
 ## Full release (v1.0)
@@ -48,7 +48,7 @@ On a seeded sample of questions with OK gold answers, score three kinds of candi
 
 ## Predictions (written before data)
 
-- Definite score-affecting error rate in the sample: between 1% and 6%. Zaid sets his own number here before freezing.
+- Definite score-affecting error rate in the sample: 3% (Zaid's prediction, entered 2026-10-13).
 - Temporal-reasoning and multi-session questions carry more errors than single-session ones.
 - Judge false-accept rate is low (prior small probes report about 1%). A clean result is reported as a clean result.
 
@@ -75,6 +75,17 @@ When v0.1 is public, the benchmark owner is sent the item ledger for the non-OK 
 
 Zero paid calls. Annotation needs no model. Model calls are cached and resumable.
 
+## Schedule
+
+- 19 Oct - 8 Nov 2026: first release (v0.1). The prior-reported stratum and the 120-question sample, reading only.
+- 9 Nov - 5 Dec: no audit work. Semester exams run 16 to 30 Nov and practicals until 5 Dec.
+- 5 - 15 Dec: no audit work. Paper revision and submission for another project.
+- 16 Dec 2026 - 10 Jan 2027: remaining 380 questions, delayed re-annotation, second annotator, model pass, judge test.
+- 11 - 31 Jan 2027: full release (v1.0) and write-up.
+
+If v0.1 slips past 8 Nov it resumes on 16 Dec; it is not worked on during the exam period.
+
 ## Change log
 
-- 2026-10-13: draft written. Not frozen.
+- 2026-10-13: draft written.
+- 2026-10-13: prior reports extended to 21 question IDs, sample re-drawn with the same seed, prediction entered, schedule added, frozen at tag `prereg-v1`.
