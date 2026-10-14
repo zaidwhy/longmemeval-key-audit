@@ -2,7 +2,7 @@
 
 A preregistered audit of the LongMemEval answer key: for each of the 500 questions, does the benchmark's own evidence support the gold answer and the evidence labels?
 
-**Status (2026-10-13):** protocol frozen at tag `prereg-v1`, amended twice (A1, A2) before any answer was locked. Annotation not started. There are no findings yet.
+**Status (2026-10-14): parked.** The protocol is frozen at tag `prereg-v1` and was amended twice (A1, A2) before any answer was locked. Annotation stopped after 5 of the 141 first-release items, all from the prior-reported stratum, so there are no findings and no error rate. Everything needed to resume is here; resuming means continuing the same pass under the same protocol.
 
 ## What is here
 
