@@ -1,4 +1,7 @@
-<img src=".github/plate.svg" alt="LongMemEval Key Audit: Does the benchmark's own evidence support its gold answers? protocol frozen at prereg-v1; parked after 5 of 141 items; no findings claimed. Core strip: 8 commits over 1 weeks, Oct 2026 to Oct 2026." width="100%">
+<picture>
+<source media="(max-width: 600px)" srcset=".github/plate-narrow.svg">
+<img src=".github/plate.svg" alt="LongMemEval Key Audit: Does the benchmark's own evidence support its gold answers? protocol frozen at prereg-v1; parked after 5 of 141 items; no findings claimed. Core strip: 9 commits over 3 weeks, Oct 2026 to Oct 2026." width="100%">
+</picture>
 
 # longmemeval-key-audit
 
