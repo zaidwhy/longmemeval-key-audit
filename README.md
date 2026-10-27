@@ -1,3 +1,5 @@
+<img src=".github/plate.svg" alt="LongMemEval Key Audit: Does the benchmark's own evidence support its gold answers? protocol frozen at prereg-v1; parked after 5 of 141 items; no findings claimed. Core strip: 8 commits over 1 weeks, Oct 2026 to Oct 2026." width="100%">
+
 # longmemeval-key-audit
 
 A preregistered audit of the LongMemEval answer key: for each of the 500 questions, does the benchmark's own evidence support the gold answer and the evidence labels?
@@ -55,3 +57,7 @@ The auditor has no commercial memory product. He builds research memory systems 
 ## Licence
 
 MIT. LongMemEval is by Wu et al. (ICLR 2025) and is MIT licensed.
+
+---
+
+<sub>One plate from the survey at [github.com/zaidwhy](https://github.com/zaidwhy). The strip on the plate above is this repository's own commit history, one band per week.</sub>

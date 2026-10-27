@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" role="img" aria-label="LongMemEval Key Audit: Does the benchmark's own evidence support its gold answers? protocol frozen at prereg-v1; parked after 5 of 141 items; no findings claimed. Core strip: 8 commits over 1 weeks, Oct 2026 to Oct 2026.">
+<metadata>author: Zaid Ali Syed; ORCID 0009-0003-4313-1510; PGP EFE9 4832 B2B9 80D9 B583 91F2 8FAA BCC1 B1AC 09E5; drawn by scripts/repo_plates.py in github.com/zaidwhy/zaidwhy</metadata>
+<defs><filter id="paper"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="7"/><feColorMatrix values="0 0 0 0 .17 0 0 0 0 .13 0 0 0 0 .09 0 0 0 .07 0"/><feComposite in2="SourceGraphic" operator="in"/></filter></defs>
+<style>.rise{transform-box:fill-box;transform-origin:bottom;animation:rise 1.6s cubic-bezier(.3,0,.2,1) .3s both}@keyframes rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media (prefers-reduced-motion:reduce){.rise{animation:none}}</style>
+<rect width="1200" height="330" fill="#F1E8D4"/><rect width="1200" height="330" filter="url(#paper)"/>
+<rect x="18" y="18" width="1164" height="294" fill="none" stroke="#2B2118" stroke-width="1.4"/>
+<rect x="24" y="24" width="1152" height="282" fill="none" stroke="#2B2118" stroke-width=".5"/>
+<text x="60.0" y="62.0" text-anchor="start" fill="#2B2118" fill-opacity="1.0" style="font-family:Georgia,'Times New Roman',serif;font-size:12px;letter-spacing:.16em;text-transform:uppercase">Survey of github.com/zaidwhy  ·  research</text>
+<text x="60.0" y="106.0" text-anchor="start" fill="#2B2118" fill-opacity="1.0" style="font-family:Georgia,'Times New Roman',serif;font-size:38px">LongMemEval Key Audit</text>
+<text x="60.0" y="136.0" text-anchor="start" fill="#2B2118" fill-opacity="0.85" style="font-family:Georgia,'Times New Roman',serif;font-size:15px;font-style:italic">Does the benchmark's own evidence support its gold answers?</text>
+<circle cx="65" cy="184" r="4" fill="#8E2F28"/>
+<text x="78.0" y="189.0" text-anchor="start" fill="#2B2118" fill-opacity="1.0" style="font-family:Georgia,'Times New Roman',serif;font-size:14px">protocol frozen at prereg-v1</text>
+<circle cx="355" cy="184" r="4" fill="#8E2F28"/>
+<text x="368.0" y="189.0" text-anchor="start" fill="#2B2118" fill-opacity="1.0" style="font-family:Georgia,'Times New Roman',serif;font-size:14px">parked after 5 of 141 items</text>
+<circle cx="645" cy="184" r="4" fill="#8E2F28"/>
+<text x="658.0" y="189.0" text-anchor="start" fill="#2B2118" fill-opacity="1.0" style="font-family:Georgia,'Times New Roman',serif;font-size:14px">no findings claimed</text>
+<line x1="60" y1="214" x2="940" y2="214" stroke="#2B2118" stroke-width=".4"/>
+<rect x="1028" y="68" width="44" height="120" rx="20" fill="#FBF7EC" stroke="#2B2118" stroke-width="1.3"/><rect class="rise" x="1032" y="124" width="36" height="60" rx="16" fill="#B0663F"/><rect x="1022" y="58" width="56" height="11" fill="#2B2118" fill-opacity=".85"/>
+<rect x="60" y="262" width="1080" height="20" rx="10.0" fill="#F7F0DF" stroke="#2B2118" stroke-width="1"/><clipPath id="core"><rect x="60" y="262" width="1080" height="20" rx="10.0"/></clipPath><g clip-path="url(#core)"><rect x="60.00" y="262" width="1080.00" height="20" fill="#B0663F" fill-opacity="1.00" stroke="#F1E8D4" stroke-width=".6"/></g><rect x="60" y="262" width="1080" height="20" rx="10.0" fill="none" stroke="#2B2118" stroke-width="1"/>
+<text x="60.0" y="250.0" text-anchor="start" fill="#2B2118" fill-opacity="0.75" style="font-family:Georgia,'Times New Roman',serif;font-size:11.5px;font-style:italic">core strip: 8 commits, one band per week</text>
+<text x="1140.0" y="250.0" text-anchor="end" fill="#2B2118" fill-opacity="0.75" style="font-family:Georgia,'Times New Roman',serif;font-size:11.5px;font-style:italic">Oct 2026 to Oct 2026  ·  taken 2026-10-28</text>
+</svg>
